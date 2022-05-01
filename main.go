@@ -113,7 +113,7 @@ func(node *Node) handleMulticast(message string){
 	}
 }
 
-func(node *Node) handleConnect(node *Node, conn net.Conn){
+func handleConnect(node *Node, conn net.Conn){
 	var (
 		buffer = make([]byte,1024)
 		message string
@@ -188,7 +188,7 @@ func (node *Node) ConnectTo(addr string){
 	}
 }
 
-func (node *Node) SendMessage(msg string,port string){
+func (node *Node) SendMessage(msg string){
 	for k,v := range node.Connection{
 		if v.Connect == true{
 			pack := Package{
