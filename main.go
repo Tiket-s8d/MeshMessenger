@@ -34,6 +34,9 @@ type Package struct {
 }
 
 var LocalAddress string
+var PORT_FOR_SEND string
+var LISTEN_PORT string
+var FLAG bool
 
 func init(){
 	iface, err := net.Interfaces()
@@ -45,9 +48,7 @@ func init(){
 		}
 	}
 }
-var PORT_FOR_SEND string
-var LISTEN_PORT string
-var FLAG bool
+
 func main(){
 	FLAG = false
 	fmt.Print("Write your name: ")   
@@ -66,16 +67,6 @@ func main(){
 	start_node.Run(handleServer,handleClient)
 }
 
-func (node *Node)Multicast(){
-	addr,err := net.ResolveUDPAddr("udp6",("[ff02::1%wlp1s0]:"+node.Address.Port)) // Get address for send message
-	msgToConnect := fmt.Sprintf("%s!%s qwejhg789",node.Name,node.Address.IPv6)
-	if err != nil{fmt.Println(err)}
-	conn,err := net.DialUDP("udp6",nil,addr) // Make connections to addr
-	if err != nil {fmt.Println(err)}
-	msg := strings.ReplaceAll(msgToConnect,"\n","")
-	conn.Write([]byte(msg))
-	conn.Close()
-}
 // Make new node with filed strings
 func NewNode(name string)*Node{
 	return &Node{
@@ -116,34 +107,39 @@ func handleServer(node *Node){
 
 }
 
+func (node *Node)Multicast(){
+	var pack Package
+
+	addr,err := net.ResolveUDPAddr("udp6",("[ff02::1%wlp1s0]:"+node.Address.Port)) // Get address for send message
+	if err != nil{fmt.Println(err)}
+	pack = Package{
+		To:"All",
+		FromName:node.Name,
+		FromIP:node.Address.IPv6,
+		Data:"M0aIbHfcKeMg5rcCh3NDaflcC3xLIdWN",
+	}
+	msg,err := json.Marshal(pack)
+	if err != nil{fmt.Println(err)}
+	conn,err := net.DialUDP("udp6",nil,addr) // Make connections to addr
+	if err != nil {fmt.Println(err)}
+
+	conn.Write([]byte(msg))
+	conn.Close()
+}
 // Processing of multicast message
-func(node *Node) MulticastProcessing(message string){
-	message = strings.ReplaceAll(message,"qwejhg789","")
-	splited := strings.Split(message,"!")
-	msgToConnect := fmt.Sprintf("%s!%s qwejhg789",node.Name,node.Address.IPv6)
-	msgToConnect = strings.ReplaceAll(msgToConnect,"\n","")
-	for i := 0; i != len(splited); i+=2{
-		node.Connection[splited[i]] = Connections{
-			IPv6: splited[i+1][:len(splited[i+1])-1],
+func(node *Node) MulticastProcessing(message Package){
+	if _,ok := node.Connection[message.FromName];ok == false{ 
+		KeyConnect := "M0aIbHfcKeMg5rcCh3NDaflcC3xLIdWN"
+		node.Connection[message.FromName] = Connections{
+			IPv6: message.FromIP,
 			Connect: true,
 		}
-		if FLAG == false{
-			ip := "["+node.Connection[splited[i]].IPv6+"%wlp1s0]:"+PORT_FOR_SEND
-			addr,err := net.ResolveUDPAddr("udp6",ip)
-			if err != nil {fmt.Println(err)}
-			con,err := net.DialUDP("udp6",nil,addr)
-			if err != nil {fmt.Println(err)}
-			con.Write([]byte(msgToConnect))
-
+		node.SendMessage(KeyConnect)
+		node.Connection[message.FromName] = Connections{
+			IPv6: message.FromIP,
+			Connect: false,
 		}
-			node.Connection[splited[i]] = Connections{
-				IPv6: splited[i+1][:len(splited[i+1])-1],
-				Connect: false,
-			}
-
 	}
-	FLAG = true	
-
 }
 
 // Processing of all messages
@@ -157,11 +153,12 @@ func handleConnect(node *Node, conn net.Conn){
 		length,err := conn.Read(buffer)
 		if err != nil{fmt.Println(err)}
 		message = string(buffer[:length])
-		if strings.Contains(message,"qwejhg789")==true {
-			node.MulticastProcessing(message)
+
+		err = json.Unmarshal([]byte(message),&pack)
+		if err != nil {fmt.Println(err)}
+		if strings.Contains(pack.Data,"M0aIbHfcKeMg5rcCh3NDaflcC3xLIdWN"){
+			node.MulticastProcessing(pack)
 		}else{
-			err := json.Unmarshal([]byte(message),&pack)
-			if err != nil {fmt.Println(err)}
 			msg := pack.FromName + ": "+pack.Data
 			msg = strings.ReplaceAll(msg,"\n","")
 			fmt.Print("\n"+msg)
@@ -169,6 +166,7 @@ func handleConnect(node *Node, conn net.Conn){
 		}
 	}
 }
+
 
 
 // Processing the messages what user write 
@@ -180,7 +178,6 @@ func handleClient(node *Node){
 		splited := strings.Split(message," ")
 		switch splited[0]{
 			case all_commands[0]: os.Exit(0)
-			case all_commands[1]: node.Test() 
 			case all_commands[2]: node.ConnectTo(splited[1])
 			case all_commands[3]: node.PrintConnections()
 			case all_commands[4]: node.Test()
@@ -193,9 +190,9 @@ func handleClient(node *Node){
 }
 
 func (node *Node) Test(){
-	for k,v := range node.Connection{
-		fmt.Println(v.Connect,k)
-	}	
+	for _,k := range node.Connection{
+		fmt.Println(k)
+	}
 }
 
 func (node *Node) Search(){
@@ -223,12 +220,11 @@ func (node *Node) PrintConnections(){
 // Make connect to user who we know, and send message to him
 func (node *Node) ConnectTo(addr string){
 	for k,_ := range node.Connection{
-		if addr == k{
-			if entry,ok := node.Connection[addr];ok{
-				entry.Connect = true
-				node.Connection[addr] = entry
-			}
-		}	
+		if (strings.ReplaceAll(k,"\n","") == addr){
+			ent := node.Connection[k]
+			ent.Connect = true
+			node.Connection[k] = ent
+		}
 	}
 }
 
@@ -257,5 +253,6 @@ func InputString() string{
 	fmt.Print("me: ")
 	msg,err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {fmt.Println(err)}
-	return strings.Replace(msg,"\n","",-1)
+	return strings.ReplaceAll(msg,"\n","")
+	
 }
