@@ -13,11 +13,12 @@ import (
 
 type Node struct {
 	Name string
-	Connection map[string]Connections
+	Connection map[string][]Connections
 	Address Address
 }
 type Connections struct{
 	IPv6 string
+	Name string
 	Connect bool
 }
 
@@ -27,18 +28,39 @@ type Address struct {
 }
 
 type Package struct {
+	Route []string
 	To string
 	FromName string
 	FromIP string
 	Data string
 }
 
-var LocalAddress string
 var PORT_FOR_SEND string
 var LISTEN_PORT string
-var FLAG bool
 
-func init(){
+func main(){
+	fmt.Print("Write your name: ")   
+	name,err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil {fmt.Println(err)}
+	
+	fmt.Print("Write your port send: ")
+	PORT_FOR_SEND,err = bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil {fmt.Println(err)}
+	PORT_FOR_SEND = strings.ReplaceAll(PORT_FOR_SEND,"\n","")
+	
+	fmt.Print("Write your port listen: ")
+	LISTEN_PORT,err = bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil {fmt.Println(err)}
+	LISTEN_PORT = strings.ReplaceAll(LISTEN_PORT,"\n","")
+	
+	start_node := NewNode(name)
+	go start_node.Multicast() 
+	start_node.Run(handleServer,handleClient)
+}
+
+// Make new node with filed strings
+func NewNode(name string)*Node{
+	var LocalAddress string
 	iface, err := net.Interfaces()
 	if err != nil {fmt.Println(err)}
 	for _,v := range iface{
@@ -47,36 +69,10 @@ func init(){
 			LocalAddress = ((x[1]).String())[:len((x[1]).String())-3]
 		}
 	}
-}
-
-func main(){
-	FLAG = false
-	fmt.Print("Write your name: ")   
-	name,err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil {fmt.Println(err)}
-	fmt.Print("Write your port send: ")
-	PORT_FOR_SEND,err = bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil {fmt.Println(err)}
-	PORT_FOR_SEND = strings.ReplaceAll(PORT_FOR_SEND,"\n","")
-	fmt.Print("Write your port listen: ")
-	LISTEN_PORT,err = bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil {fmt.Println(err)}
-	LISTEN_PORT = strings.ReplaceAll(LISTEN_PORT,"\n","")
-	start_node := NewNode(name)
-	go start_node.Multicast() 
-	start_node.Run(handleServer,handleClient)
-}
-
-// Make new node with filed strings
-func NewNode(name string)*Node{
+	
 	return &Node{
 		Name:name,
-		Connection: map[string]Connections{
-			name:Connections{
-				IPv6:LocalAddress,
-				Connect:false,
-			},
-		},
+		
 		Address : Address{
 			IPv6: LocalAddress,
 			Port: PORT_FOR_SEND,
@@ -110,7 +106,7 @@ func handleServer(node *Node){
 func (node *Node)Multicast(){
 	var pack Package
 
-	addr,err := net.ResolveUDPAddr("udp6",("[ff02::1%wlp1s0]:"+node.Address.Port)) // Get address for send message
+	addr,err := net.ResolveUDPAddr("udp6",("[ff02::1%wlan0]:"+node.Address.Port)) // Get address for send message
 	if err != nil{fmt.Println(err)}
 	pack = Package{
 		To:"All",
@@ -130,12 +126,12 @@ func (node *Node)Multicast(){
 func(node *Node) MulticastProcessing(message Package){
 	if _,ok := node.Connection[message.FromName];ok == false{ 
 		KeyConnect := "M0aIbHfcKeMg5rcCh3NDaflcC3xLIdWN"
-		node.Connection[message.FromName] = Connections{
+		node.Connection[message.FromName] = append(node.Connection[message.FromName],Connections{
 			IPv6: message.FromIP,
 			Connect: true,
-		}
+		})
 		node.SendMessage(KeyConnect)
-		node.Connection[message.FromName] = Connections{
+		node.Connection[message.FromName][0] = Connections{
 			IPv6: message.FromIP,
 			Connect: false,
 		}
@@ -196,56 +192,58 @@ func (node *Node) Test(){
 }
 
 func (node *Node) Search(){
-//	for k,v := range node.Connection{
-//		if node.Name != k{
-//			addr := "["+v.Connection.IPv6+"%wlp0s1]:"+k.Address.Port
-//			ip,err := net.ResolveUDPAddr("udp6",addr)
-//			if err != nil {fmt.Println(err)}
-//			conn,err := net.DialUDP("udp6",nil,ip)
-//			if err != nil {fmt.Println(err)}
-//			conn.Write([]byte())
-//		}
-//	}
 }
 
 // Print all connections users
 func (node *Node) PrintConnections(){
-	for v,k := range node.Connection{
-		x := fmt.Sprintf("%s:%t",v,k.Connect)
-		x = strings.ReplaceAll(x,"\n","")
-		fmt.Println(x);
-	}
+//	for v,k := range node.Connection{
+//	}
 }
 
 // Make connect to user who we know, and send message to him
 func (node *Node) ConnectTo(addr string){
-	for k,_ := range node.Connection{
-		if (strings.ReplaceAll(k,"\n","") == addr){
-			ent := node.Connection[k]
-			ent.Connect = true
-			node.Connection[k] = ent
-		}
-	}
+//	for k,_ := range node.Connection{
+//		if (strings.ReplaceAll(k,"\n","") == addr){
+//			ent := node.Connection[k]
+//			ent.Connect = true
+//			node.Connection[k] = ent
+//		}
+//	}
 }
 
 func (node *Node) SendMessage(msg string){
-	for k,v := range node.Connection{
-		if v.Connect == true{
-			pack := Package{
-				To:k,
-				FromName:node.Name,
-				FromIP:node.Address.IPv6,
-				Data:msg,
+//	for k,v := range node.Connection{
+//		if v.Connect == true{
+//			pack := Package{
+//				To:k,
+//				FromName:node.Name,
+//				FromIP:node.Address.IPv6,
+//				Data:msg,
+//			}
+//			msg_to_send,err := json.Marshal(pack)
+//			if err != nil{fmt.Println(err)}
+//		}
+//	}
+	for n,v := range node.Connection{
+		for _,k := range v{
+			if k.Connect == true{
+				pack := Package{
+					To:n,
+					FromName:node.Name,
+					FromIP:node.Address.IPv6,
+					Data:msg,
+				}
+				msg_to_send,err := json.Marshal(pack)
+				if err != nil{fmt.Println(err)}
+
+				addr := "["+k.IPv6+"%wlan0]:"+PORT_FOR_SEND
+				ip,err := net.ResolveUDPAddr("udp6",addr)
+				if err != nil{fmt.Println(err)}
+				conn,err := net.DialUDP("udp6",nil,ip)
+				conn.Write([]byte(msg_to_send))
+				conn.Close()
 			}
-			msg_to_send,err := json.Marshal(pack)
-			if err != nil{fmt.Println(err)}
-			addr := "["+v.IPv6+"%wlp1s0]:"+PORT_FOR_SEND
-			ip,err := net.ResolveUDPAddr("udp6",addr)
-			if err != nil{fmt.Println(err)}
-			conn,err := net.DialUDP("udp6",nil,ip)
-			conn.Write([]byte(msg_to_send))
-			conn.Close()
-		}
+		}	
 	}
 }
 
